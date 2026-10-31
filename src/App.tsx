@@ -1,9 +1,18 @@
-import { type CSSProperties, type ReactNode, useEffect, useState } from 'react';
+import {
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import {
   COLORS,
   type Data,
   type Day,
   type Habit,
+  type HabitFields,
   type Month,
   addDays,
   addHabit,
@@ -13,6 +22,7 @@ import {
   loadData,
   monthDays,
   monthOf,
+  moveHabit,
   nextColor,
   removeHabit,
   saveData,
@@ -48,6 +58,8 @@ export default function App() {
   const [sheet, setSheet] = useState<Sheet>(null);
   // The id of the habit whose row shows the swipe actions.
   const [swiped, setSwiped] = useState<string | null>(null);
+  // True while the day view shows drag handles to change the order of the habits.
+  const [reorder, setReorder] = useState(false);
   const [theme, nextTheme] = useTheme();
 
   useEffect(() => saveData(data), [data]);
@@ -61,6 +73,20 @@ export default function App() {
       <header>
         <h1>Habits</h1>
         <div className="header-buttons">
+          {view === 'day' && data.habits.length > 1 && (
+            <button
+              className={reorder ? 'icon active' : 'icon'}
+              onClick={() => {
+                setSwiped(null);
+                setReorder((r) => !r);
+              }}
+              aria-pressed={reorder}
+              aria-label="Change order"
+              title="Change order"
+            >
+              <Icon name={reorder ? 'check' : 'sort'} />
+            </button>
+          )}
           <button
             className="icon"
             onClick={nextTheme}
@@ -82,7 +108,15 @@ export default function App() {
 
       <div className="tabs" role="tablist">
         {(['day', 'month'] as View[]).map((v) => (
-          <button key={v} role="tab" aria-selected={v === view} onClick={() => setView(v)}>
+          <button
+            key={v}
+            role="tab"
+            aria-selected={v === view}
+            onClick={() => {
+              setView(v);
+              setReorder(false);
+            }}
+          >
             {v === 'day' ? 'Day' : 'Month'}
           </button>
         ))}
@@ -99,42 +133,52 @@ export default function App() {
             nextDisabled={day >= today()}
             onLabel={() => setDay(today())}
           />
-          <ul>
-            {data.habits.map((habit) => {
-              const done = isDone(data, habit.id, day);
-              return (
-                <SwipeRow
-                  key={habit.id}
-                  className={`habit${done ? ' done' : ''}`}
-                  style={{ '--color': habit.color } as CSSProperties}
-                  open={swiped === habit.id}
-                  onOpen={() => setSwiped(habit.id)}
-                  onClose={() => setSwiped(null)}
-                  onEdit={() => {
-                    setSwiped(null);
-                    setSheet({ id: habit.id });
-                  }}
-                  onDelete={() => {
-                    setSwiped(null);
-                    setData((x) => removeHabit(x, habit.id));
-                  }}
-                >
-                  <button
-                    className="info"
-                    role="checkbox"
-                    aria-checked={done}
-                    onClick={() => toggle(habit.id, day)}
+          {reorder ? (
+            <ReorderList habits={data.habits} onMove={(from, to) => setData((x) => moveHabit(x, from, to))} />
+          ) : (
+            <ul>
+              {data.habits.map((habit) => {
+                const done = isDone(data, habit.id, day);
+                const started = day >= habit.start;
+                return (
+                  <SwipeRow
+                    key={habit.id}
+                    className={`habit${done ? ' done' : ''}`}
+                    style={{ '--color': habit.color } as CSSProperties}
+                    open={swiped === habit.id}
+                    onOpen={() => setSwiped(habit.id)}
+                    onClose={() => setSwiped(null)}
+                    onEdit={() => {
+                      setSwiped(null);
+                      setSheet({ id: habit.id });
+                    }}
+                    onDelete={() => {
+                      setSwiped(null);
+                      setData((x) => removeHabit(x, habit.id));
+                    }}
                   >
-                    <span className="text">
-                      <span className="name">{habit.name}</span>
-                      <span className="meta">Score {percent(totalScore(data, habit))}</span>
-                    </span>
-                    <span className="box">{done && <Icon name="check" size={28} />}</span>
-                  </button>
-                </SwipeRow>
-              );
-            })}
-          </ul>
+                    <button
+                      className="info"
+                      role="checkbox"
+                      aria-checked={done}
+                      disabled={!started}
+                      onClick={() => toggle(habit.id, day)}
+                    >
+                      <span className="text">
+                        <span className="name">{habit.name}</span>
+                        <span className="meta">
+                          {started
+                            ? `Score ${percent(totalScore(data, habit))}`
+                            : `Starts ${dayLabel(habit.start)}`}
+                        </span>
+                      </span>
+                      <span className="box">{done && <Icon name="check" size={28} />}</span>
+                    </button>
+                  </SwipeRow>
+                );
+              })}
+            </ul>
+          )}
         </>
       )}
 
@@ -167,11 +211,10 @@ export default function App() {
           key={sheet.id ?? 'new'}
           name={sheetHabit?.name ?? ''}
           color={sheetHabit?.color ?? nextColor(data.habits)}
+          start={sheetHabit?.start ?? today()}
           onCancel={close}
-          onSave={(name, color) => {
-            setData((x) =>
-              sheetHabit ? updateHabit(x, sheetHabit.id, name, color) : addHabit(x, name, color),
-            );
+          onSave={(fields) => {
+            setData((x) => (sheetHabit ? updateHabit(x, sheetHabit.id, fields) : addHabit(x, fields)));
             close();
           }}
           onDelete={
@@ -236,7 +279,8 @@ interface MonthCardProps {
 }
 
 // The days of one month for one habit. A tap on a day marks the habit as done
-// or not done on that day. Days after today are disabled.
+// or not done on that day. Days before the start of the habit and days after
+// today are disabled.
 function MonthCard({ data, habit, month, onToggle, onEdit }: MonthCardProps) {
   const days = monthDays(month);
   const now = today();
@@ -267,7 +311,7 @@ function MonthCard({ data, habit, month, onToggle, onEdit }: MonthCardProps) {
             <button
               key={d}
               className={`cell${done ? ' done' : ''}${d === now ? ' today' : ''}`}
-              disabled={d > now}
+              disabled={d > now || d < habit.start}
               role="checkbox"
               aria-checked={done}
               aria-label={fromDay(d).toLocaleDateString()}
@@ -279,6 +323,91 @@ function MonthCard({ data, habit, month, onToggle, onEdit }: MonthCardProps) {
         })}
       </div>
     </li>
+  );
+}
+
+interface ReorderListProps {
+  habits: Habit[];
+  onMove: (from: number, to: number) => void;
+}
+
+// The habits with a drag handle on each row. Drag a handle up or down to move
+// the habit. The arrow keys move the habit of the focused handle.
+function ReorderList({ habits, onMove }: ReorderListProps) {
+  // The dragged habit, the pointer position at which its row is at rest, and
+  // the current pointer position.
+  const [drag, setDrag] = useState<{ id: string; origin: number; y: number } | null>(null);
+  const rows = useRef<HTMLUListElement>(null);
+
+  // The distance between the tops of two rows in pixels.
+  const step = () => {
+    const ul = rows.current;
+    const li = ul?.firstElementChild as HTMLElement | null;
+    if (!ul || !li) return 1;
+    return li.offsetHeight + parseFloat(getComputedStyle(ul).rowGap || '0');
+  };
+
+  const onPointerMove = (e: PointerEvent) => {
+    if (!drag) return;
+    const index = habits.findIndex((h) => h.id === drag.id);
+    const s = step();
+    let origin = drag.origin;
+    let to = index;
+    while (e.clientY - origin > s / 2 && to < habits.length - 1) {
+      origin += s;
+      to++;
+    }
+    while (e.clientY - origin < -s / 2 && to > 0) {
+      origin -= s;
+      to--;
+    }
+    if (to !== index) onMove(index, to);
+    setDrag({ id: drag.id, origin, y: e.clientY });
+  };
+
+  const onKeyDown = (e: KeyboardEvent, index: number) => {
+    const to = e.key === 'ArrowUp' ? index - 1 : e.key === 'ArrowDown' ? index + 1 : -1;
+    if (to < 0 || to >= habits.length) return;
+    e.preventDefault();
+    onMove(index, to);
+  };
+
+  return (
+    <ul ref={rows} className="reorder">
+      {habits.map((habit, index) => (
+        <li
+          key={habit.id}
+          className={`habit${drag?.id === habit.id ? ' dragged' : ''}`}
+          style={
+            {
+              '--color': habit.color,
+              transform: drag?.id === habit.id ? `translateY(${drag.y - drag.origin}px)` : undefined,
+            } as CSSProperties
+          }
+        >
+          <span className="info">
+            <span className="text">
+              <span className="name">{habit.name}</span>
+            </span>
+            <button
+              className="handle"
+              aria-label={`Move ${habit.name}`}
+              title="Drag to move"
+              onPointerDown={(e) => {
+                e.currentTarget.setPointerCapture(e.pointerId);
+                setDrag({ id: habit.id, origin: e.clientY, y: e.clientY });
+              }}
+              onPointerMove={onPointerMove}
+              onPointerUp={() => setDrag(null)}
+              onPointerCancel={() => setDrag(null)}
+              onKeyDown={(e) => onKeyDown(e, index)}
+            >
+              <Icon name="grip" size={24} />
+            </button>
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -308,7 +437,8 @@ function SheetFrame(props: {
 interface HabitFormProps {
   name: string;
   color: string;
-  onSave: (name: string, color: string) => void;
+  start: Day;
+  onSave: (fields: HabitFields) => void;
   onCancel: () => void;
   onDelete?: () => void;
 }
@@ -316,17 +446,22 @@ interface HabitFormProps {
 function HabitForm(props: HabitFormProps) {
   const [name, setName] = useState(props.name);
   const [color, setColor] = useState(props.color);
+  const [start, setStart] = useState(props.start);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
     <SheetFrame
       title={props.onDelete ? 'Edit habit' : 'New habit'}
       onCancel={props.onCancel}
-      onSubmit={() => props.onSave(name.trim() || 'Habit', color)}
+      onSubmit={() => props.onSave({ name: name.trim() || 'Habit', color, start: start || props.start })}
     >
       <label>
         Name
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Habit" />
+      </label>
+      <label>
+        Start day
+        <input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
       </label>
       <div className="colors" role="radiogroup" aria-label="Color">
         {COLORS.map((c, i) => (

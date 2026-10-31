@@ -10,6 +10,8 @@ const PATHS = {
   moon: 'M19 15A8 8 0 0 1 9 5a8 8 0 1 0 10 10z',
   edit: 'M4 20v-4L15 5l4 4L8 20zM12 8l4 4',
   trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13',
+  sort: 'M8 4v16M4 16l4 4 4-4M16 20V4M12 8l4-4 4 4',
+  grip: 'M4 8h16M4 12h16M4 16h16',
 };
 
 export type IconName = keyof typeof PATHS;

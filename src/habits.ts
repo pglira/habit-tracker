@@ -7,6 +7,8 @@ export interface Habit {
   color: string;
   // The day on which the user added the habit.
   created: Day;
+  // The first day of the habit. Only days from this day on count.
+  start: Day;
 }
 
 export interface Data {
@@ -31,10 +33,21 @@ export const COLORS = [
 
 const EMPTY: Data = { habits: [], done: {} };
 
+// Give each habit a start day. A habit without one starts on the day of
+// creation, or on an earlier day that is marked as done.
+function withStart(data: Data): Data {
+  const habits = data.habits.map((h) => {
+    if (h.start) return h;
+    const first = data.done[h.id]?.reduce((a, b) => (b < a ? b : a), h.created);
+    return { ...h, start: first ?? h.created };
+  });
+  return { ...data, habits };
+}
+
 export function loadData(): Data {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? { ...EMPTY, ...(JSON.parse(raw) as Partial<Data>) } : EMPTY;
+    return raw ? withStart({ ...EMPTY, ...(JSON.parse(raw) as Partial<Data>) }) : EMPTY;
   } catch {
     return EMPTY;
   }
@@ -102,20 +115,13 @@ export function isDone(data: Data, id: string, day: Day): boolean {
   return data.done[id]?.includes(day) ?? false;
 }
 
-// The first day that counts for the score: the day of creation, or an earlier
-// day that the user marked as done.
-export function startDay(data: Data, habit: Habit): Day {
-  const first = data.done[habit.id]?.reduce((a, b) => (b < a ? b : a), habit.created);
-  return first ?? habit.created;
-}
-
 // The percentage of the days from `from` to `to` (both included) on which the
 // habit is done. Only days from the start of the habit to today count. Today
 // counts only when the habit is done, because the day is not over yet. The
 // result is null when no day counts.
 export function score(data: Data, habit: Habit, from: Day, to: Day): number | null {
   const now = today();
-  const start = startDay(data, habit);
+  const start = habit.start;
   const first = from < start ? start : from;
   const last = to < now ? to : addDays(now, -1);
   const done = new Set(data.done[habit.id]);
@@ -134,16 +140,27 @@ export function score(data: Data, habit: Habit, from: Day, to: Day): number | nu
 
 // The score from the start of the habit to today.
 export function totalScore(data: Data, habit: Habit): number | null {
-  return score(data, habit, startDay(data, habit), today());
+  return score(data, habit, habit.start, today());
 }
 
-export function addHabit(data: Data, name: string, color: string): Data {
-  const habit: Habit = { id: crypto.randomUUID(), name, color, created: today() };
+// The fields of a habit that the user edits.
+export type HabitFields = Pick<Habit, 'name' | 'color' | 'start'>;
+
+export function addHabit(data: Data, fields: HabitFields): Data {
+  const habit: Habit = { id: crypto.randomUUID(), created: today(), ...fields };
   return { ...data, habits: [...data.habits, habit] };
 }
 
-export function updateHabit(data: Data, id: string, name: string, color: string): Data {
-  return { ...data, habits: data.habits.map((h) => (h.id === id ? { ...h, name, color } : h)) };
+export function updateHabit(data: Data, id: string, fields: HabitFields): Data {
+  return { ...data, habits: data.habits.map((h) => (h.id === id ? { ...h, ...fields } : h)) };
+}
+
+// Move the habit at index `from` to index `to`.
+export function moveHabit(data: Data, from: number, to: number): Data {
+  const habits = [...data.habits];
+  const [habit] = habits.splice(from, 1);
+  habits.splice(to, 0, habit);
+  return { ...data, habits };
 }
 
 export function removeHabit(data: Data, id: string): Data {

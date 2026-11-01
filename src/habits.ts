@@ -1,6 +1,18 @@
 // A day is a local date in the form 'YYYY-MM-DD'. The keys sort in date order.
 export type Day = string;
 
+// A goal of a number of done days in each week or in each month. A week
+// starts on Monday.
+export type Period = 'week' | 'month';
+
+export interface Goal {
+  count: number;
+  period: Period;
+}
+
+// The largest goal count for each period.
+export const MAX_COUNT: Record<Period, number> = { week: 7, month: 31 };
+
 export interface Habit {
   id: string;
   name: string;
@@ -9,6 +21,8 @@ export interface Habit {
   created: Day;
   // The first day of the habit. Only days from this day on count.
   start: Day;
+  // Missing when the goal is every day.
+  goal?: Goal;
 }
 
 export interface Data {
@@ -121,11 +135,41 @@ export function isDone(data: Data, id: string, day: Day): boolean {
   return data.done[id]?.includes(day) ?? false;
 }
 
-// The percentage of the days from `from` to `to` (both included) on which the
-// habit is done. Only days from the start of the habit to today count. Today
-// counts only when the habit is done, because the day is not over yet. The
-// result is null when no day counts.
+// The number of days from `a` to `b`, both included.
+function length(a: Day, b: Day): number {
+  return Math.round((fromDay(b).getTime() - fromDay(a).getTime()) / 86_400_000) + 1;
+}
+
+// The first and the last day of the week or the month that contains `day`.
+export function periodOf(day: Day, period: Period): [Day, Day] {
+  if (period === 'month') {
+    const days = monthDays(monthOf(day));
+    return [days[0], days.at(-1)!];
+  }
+  const first = addDays(day, -((fromDay(day).getDay() + 6) % 7));
+  return [first, addDays(first, 6)];
+}
+
+// The number of days from `from` to `to` (both included) on which the habit
+// is done.
+export function countDone(data: Data, habit: Habit, from: Day, to: Day): number {
+  return (data.done[habit.id] ?? []).filter((d) => from <= d && d <= to).length;
+}
+
+// The percentage of the goal that the habit reaches from `from` to `to` (both
+// included). Only days from the start of the habit to today count. The result
+// is null when no day counts.
+//
+// Without a goal, the score is the percentage of the days on which the habit
+// is done. Today counts only when the habit is done, because the day is not
+// over yet.
+//
+// With a goal, each week or month counts with its goal count. A period that is
+// only partly in the range or after the start counts with the same part of its
+// goal count. A period that is not over yet counts only with the done days, up
+// to its goal count.
 export function score(data: Data, habit: Habit, from: Day, to: Day): number | null {
+  if (habit.goal) return goalScore(data, habit, habit.goal, from, to);
   const now = today();
   const start = habit.start;
   const first = from < start ? start : from;
@@ -144,13 +188,30 @@ export function score(data: Data, habit: Habit, from: Day, to: Day): number | nu
   return total === 0 ? null : Math.round((100 * count) / total);
 }
 
+function goalScore(data: Data, habit: Habit, goal: Goal, from: Day, to: Day): number | null {
+  const now = today();
+  const first = from < habit.start ? habit.start : from;
+  let target = 0;
+  let reached = 0;
+  for (let day = first; day <= to && day <= now;) {
+    const [start, end] = periodOf(day, goal.period);
+    const last = end < to ? end : to;
+    const part = (goal.count * length(day, last)) / length(start, end);
+    const done = Math.min(countDone(data, habit, day, last), part);
+    reached += done;
+    target += last < now ? part : done;
+    day = addDays(last, 1);
+  }
+  return target === 0 ? null : Math.round((100 * reached) / target);
+}
+
 // The score from the start of the habit to today.
 export function totalScore(data: Data, habit: Habit): number | null {
   return score(data, habit, habit.start, today());
 }
 
 // The fields of a habit that the user edits.
-export type HabitFields = Pick<Habit, 'name' | 'color' | 'start'>;
+export type HabitFields = Pick<Habit, 'name' | 'color' | 'start' | 'goal'>;
 
 export function addHabit(data: Data, fields: HabitFields): Data {
   const habit: Habit = { id: crypto.randomUUID(), created: today(), ...fields };

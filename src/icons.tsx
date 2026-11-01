@@ -2,6 +2,7 @@
 // all icons have the same weight. The icons use the current text color.
 const PATHS = {
   plus: 'M12 5v14M5 12h14',
+  minus: 'M5 12h14',
   check: 'M5 12l5 5L19 7',
   left: 'M15 5l-7 7 7 7',
   right: 'M9 5l7 7-7 7',

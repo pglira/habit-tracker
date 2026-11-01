@@ -6,7 +6,8 @@ A Progressive Web App that tracks daily habits.
 - Change the order of the habits: tap the order button in the day view and drag the handle of a habit up or down.
 - Day view: tap a habit to mark it as done on the selected day. Go back to earlier days with the arrows.
 - Month view: a calendar for each habit. Tap a day to mark the habit as done or not done.
-- Score: the percentage of the days on which a habit is done. Only days from the start day on count. The day view shows the score since the start of the habit, the month view shows the score of the month. Today counts only when the habit is done.
+- Goal: every day, or a number of days per week or per month. The day view shows the done days of the current week or month, for example "Week 2/3".
+- Score: the percentage of the goal that a habit reaches. Only days from the start day on count. The day view shows the score since the start of the habit, the month view shows the score of the month. A day or a period that is not over yet counts only with its done days.
 - Back up all data: the backup button in the header opens Export and Import. Export saves all data to a file. Import the file on a new phone to replace all data.
 
 ## Tech

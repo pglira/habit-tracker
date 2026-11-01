@@ -14,12 +14,16 @@ import {
   COLORS,
   type Data,
   type Day,
+  type Goal,
   type Habit,
   type HabitFields,
   type Month,
+  MAX_COUNT,
+  type Period,
   addDays,
   addHabit,
   addMonths,
+  countDone,
   fromDay,
   isDataKey,
   isDone,
@@ -28,6 +32,7 @@ import {
   monthOf,
   moveHabit,
   nextColor,
+  periodOf,
   removeHabit,
   saveData,
   score,
@@ -176,7 +181,9 @@ export default function App() {
                         <span className="name">{habit.name}</span>
                         <span className="meta">
                           {started
-                            ? `Score ${percent(totalScore(data, habit))}`
+                            ? [goalProgress(data, habit, day), `Score ${percent(totalScore(data, habit))}`]
+                                .filter(Boolean)
+                                .join(' · ')
                             : `Starts ${dayLabel(habit.start)}`}
                         </span>
                       </span>
@@ -222,6 +229,7 @@ export default function App() {
           name={sheetHabit?.name ?? ''}
           color={sheetHabit?.color ?? nextColor(data.habits)}
           start={sheetHabit?.start ?? today()}
+          goal={sheetHabit?.goal}
           onCancel={close}
           onSave={(fields) => {
             setData((x) => (sheetHabit ? updateHabit(x, sheetHabit.id, fields) : addHabit(x, fields)));
@@ -239,6 +247,16 @@ export default function App() {
       )}
     </main>
   );
+}
+
+const PERIOD_NAMES: Record<Period, string> = { week: 'Week', month: 'Month' };
+
+// The done days and the goal count of the week or the month that contains
+// `day`, for example "Week 2/3". Empty for a habit without a goal.
+function goalProgress(data: Data, habit: Habit, day: Day): string {
+  if (!habit.goal) return '';
+  const [first, last] = periodOf(day, habit.goal.period);
+  return `${PERIOD_NAMES[habit.goal.period]} ${countDone(data, habit, first, last)}/${habit.goal.count}`;
 }
 
 function dayLabel(day: Day): string {
@@ -304,6 +322,9 @@ function MonthCard({ data, habit, month, onToggle, onEdit }: MonthCardProps) {
         <button className="month-name" onClick={onEdit} aria-label={`Edit ${habit.name}`}>
           {habit.name}
         </button>
+        {habit.goal?.period === 'month' && (
+          <span className="month-goal">{goalProgress(data, habit, days[0]).replace('Month ', '')}</span>
+        )}
         <span className="month-score">{percent(score(data, habit, days[0], days.at(-1)!))}</span>
       </div>
       <div className="grid">
@@ -510,22 +531,38 @@ interface HabitFormProps {
   name: string;
   color: string;
   start: Day;
+  goal?: Goal;
   onSave: (fields: HabitFields) => void;
   onCancel: () => void;
   onDelete?: () => void;
 }
 
+const GOALS: [Period | null, string][] = [
+  [null, 'Every day'],
+  ['week', 'Per week'],
+  ['month', 'Per month'],
+];
+
+// Add or edit a habit: the name, the start day, the goal and the color. The
+// goal is every day, or a number of days per week or per month.
 function HabitForm(props: HabitFormProps) {
   const [name, setName] = useState(props.name);
   const [color, setColor] = useState(props.color);
   const [start, setStart] = useState(props.start);
+  // The goal period, or null for every day.
+  const [period, setPeriod] = useState<Period | null>(props.goal?.period ?? null);
+  const [count, setCount] = useState(props.goal?.count ?? 3);
+  const max = period ? MAX_COUNT[period] : 1;
+  const goal = period ? { period, count: Math.min(count, max) } : undefined;
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
     <SheetFrame
       title={props.onDelete ? 'Edit habit' : 'New habit'}
       onCancel={props.onCancel}
-      onSubmit={() => props.onSave({ name: name.trim() || 'Habit', color, start: start || props.start })}
+      onSubmit={() =>
+        props.onSave({ name: name.trim() || 'Habit', color, start: start || props.start, goal })
+      }
     >
       <label>
         Name
@@ -535,6 +572,49 @@ function HabitForm(props: HabitFormProps) {
         Start day
         <input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
       </label>
+      <div className="goal">
+        <span className="goal-label">Goal</span>
+        <div className="segments" role="radiogroup" aria-label="Goal">
+          {GOALS.map(([p, label]) => (
+            <button
+              key={label}
+              type="button"
+              role="radio"
+              aria-checked={period === p}
+              onClick={() => setPeriod(p)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {goal && (
+          <div className="stepper">
+            <button
+              type="button"
+              className="icon"
+              onClick={() => setCount(goal.count - 1)}
+              disabled={goal.count <= 1}
+              aria-label="Fewer days"
+              title="Fewer days"
+            >
+              <Icon name="minus" />
+            </button>
+            <span>
+              <strong>{goal.count}</strong> {goal.count === 1 ? 'day' : 'days'} per {goal.period}
+            </span>
+            <button
+              type="button"
+              className="icon"
+              onClick={() => setCount(goal.count + 1)}
+              disabled={goal.count >= max}
+              aria-label="More days"
+              title="More days"
+            >
+              <Icon name="plus" />
+            </button>
+          </div>
+        )}
+      </div>
       <div className="colors" role="radiogroup" aria-label="Color">
         {COLORS.map((c, i) => (
           <button

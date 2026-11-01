@@ -1,4 +1,5 @@
 import {
+  type ChangeEvent,
   type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
@@ -7,7 +8,9 @@ import {
   useRef,
   useState,
 } from 'react';
+import { type Backup, exportBackup, readBackup, restoreBackup } from './backup';
 import {
+  BACKUP_APP,
   COLORS,
   type Data,
   type Day,
@@ -18,6 +21,7 @@ import {
   addHabit,
   addMonths,
   fromDay,
+  isDataKey,
   isDone,
   loadData,
   monthDays,
@@ -60,6 +64,7 @@ export default function App() {
   const [swiped, setSwiped] = useState<string | null>(null);
   // True while the day view shows drag handles to change the order of the habits.
   const [reorder, setReorder] = useState(false);
+  const [backupOpen, setBackupOpen] = useState(false);
   const [theme, nextTheme] = useTheme();
 
   useEffect(() => saveData(data), [data]);
@@ -94,6 +99,9 @@ export default function App() {
             title={THEME_LABELS[theme]}
           >
             <Icon name={THEME_ICONS[theme]} />
+          </button>
+          <button className="icon" onClick={() => setBackupOpen(true)} aria-label="Backup" title="Backup">
+            <Icon name="backup" />
           </button>
           <button
             className="add"
@@ -205,6 +213,8 @@ export default function App() {
           </ul>
         </>
       )}
+
+      {backupOpen && <BackupSheet onClose={() => setBackupOpen(false)} />}
 
       {sheet && (
         <HabitForm
@@ -431,6 +441,68 @@ function SheetFrame(props: {
         {props.children}
       </form>
     </div>
+  );
+}
+
+// Export all data of the app to a backup file, or replace all data with the
+// data of a backup file. The import needs a second tap to replace the data.
+function BackupSheet({ onClose }: { onClose: () => void }) {
+  const [backup, setBackup] = useState<Backup | null>(null);
+  const [error, setError] = useState('');
+
+  const importFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Clear the input so that the same file can be selected again.
+    e.target.value = '';
+    if (!file) return;
+    try {
+      setBackup(readBackup(await file.text(), BACKUP_APP));
+      setError('');
+    } catch (err) {
+      setBackup(null);
+      setError(err instanceof Error ? err.message : 'The file is not a valid backup.');
+    }
+  };
+
+  return (
+    <SheetFrame title="Backup" onCancel={onClose} onSubmit={onClose}>
+      <p className="hint">Export all data to a file. Import the file on the new phone.</p>
+      <div className="file-buttons">
+        <button
+          type="button"
+          className="file-button"
+          onClick={() => exportBackup(BACKUP_APP, isDataKey)}
+          title="Export all data to a file"
+        >
+          <Icon name="download" size={18} />
+          Export
+        </button>
+        <label className="file-button" title="Import all data from a file">
+          <Icon name="upload" size={18} />
+          Import
+          <input type="file" accept="application/json,.json" hidden onChange={importFile} />
+        </label>
+      </div>
+      {error && <p className="error">{error}</p>}
+      {backup && (
+        <button
+          type="button"
+          className="replace"
+          onClick={() => {
+            restoreBackup(backup, isDataKey);
+            location.reload();
+          }}
+        >
+          Tap to replace all data
+          <small>Backup of {new Date(backup.exported).toLocaleString()}</small>
+        </button>
+      )}
+      <div className="buttons">
+        <button type="submit" className="primary">
+          Close
+        </button>
+      </div>
+    </SheetFrame>
   );
 }
 

@@ -11,6 +11,9 @@ const PATHS = {
   edit: 'M4 20v-4L15 5l4 4L8 20zM12 8l4 4',
   trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13',
   sort: 'M8 4v16M4 16l4 4 4-4M16 20V4M12 8l4-4 4 4',
+  backup: 'M4 14v6h16v-6M12 4v11M8 11l4 4 4-4',
+  download: 'M12 4v11M7 10l5 5l5-5M4 20h16',
+  upload: 'M12 15V4M7 9l5-5l5 5M4 20h16',
   grip: 'M4 8h16M4 12h16M4 16h16',
 };
 

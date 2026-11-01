@@ -19,6 +19,12 @@ export interface Data {
 
 const STORAGE_KEY = 'habits.v1';
 
+// The name of the app in a backup file.
+export const BACKUP_APP = 'habit-tracker';
+
+// The storage keys of all data of the app. The theme is not data.
+export const isDataKey = (key: string) => key === STORAGE_KEY;
+
 // Colors that the user can select for a habit.
 export const COLORS = [
   '#43a047',
